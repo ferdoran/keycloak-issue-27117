@@ -11,5 +11,7 @@ make start
 you can start the tests by
 
 ```bash
-./test/revoke.sh
+./test/login-revoke.sh
 ```
+
+in the console output you can see that the revoke calls are flaky
