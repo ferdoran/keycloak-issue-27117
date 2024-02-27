@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<infinispan xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="urn:infinispan:config:14.0 http://www.infinispan.org/schemas/infinispan-config-14.0.xsd"
+            xmlns="urn:infinispan:config:14.0">
+
+    <!-- custom stack goes into the jgroups element -->
+    <!-- see https://infinispan.org/blog/2019/03/05/enhanced-jgroups-configuration/ -->
+    <!-- see http://jgroups.org/manual4/index.html#CommonProps -->
+    <cache-container name="keycloak">
+        <!-- custom stack must be referenced by name in the stack attribute of the transport element -->
+        <!-- note, that this should be kept aligned with: https://github.com/keycloak/keycloak/blob/main/quarkus/runtime/src/main/resources/cache-ispn.xml -->
+        <transport lock-timeout="60000" stack="tcp" initial-cluster-timeout="60000"/>
+        <!--<transport initial-cluster-size="0" initial-cluster-timeout="1" />-->
+
+        <distributed-cache name="authenticationSessions" owners="2" remote-timeout="60000">
+            <expiration lifespan="-1"/>
+            <persistence passivation="false">
+                <remote-store cache="authenticationSessions"
+                              shared="true"
+                              segmented="false"
+                              raw-values="true"
+                              xmlns="urn:infinispan:config:store:remote:14.0">
+                    <remote-server host="${env.ISPN_URL}"/>
+                    <security>
+                        <authentication>
+                            <digest username="${env.ISPN_USERNAME}" password="${env.ISPN_PASSWORD}" realm="default"/>
+                        </authentication>
+                    </security>
+                </remote-store>
+            </persistence>
+        </distributed-cache>
+        <distributed-cache name="sessions" owners="2" remote-timeout="60000">
+            <expiration lifespan="-1"/>
+            <!--      <transaction mode="NON_XA"/>-->
+            <persistence passivation="false">
+                <remote-store cache="sessions"
+                              shared="true"
+                              segmented="false"
+                              raw-values="true"
+                              xmlns="urn:infinispan:config:store:remote:14.0">
+                    <remote-server host="${env.ISPN_URL}" />
+                    <security>
+                        <authentication>
+                            <digest username="${env.ISPN_USERNAME}" password="${env.ISPN_PASSWORD}" realm="default"/>
+                        </authentication>
+                    </security>
+                </remote-store>
+
+            </persistence>
+            <!--
+              100000 objects are kept per keycloak node in memory for quick access (max-count=100000),
+              these will not be replicated to other keycloak nodes directly (owners=1).
+              Every entry will be pushed to a remote store (our dedicated infinispan).
+            -->
+            <!--      <memory max-count="100000"/>-->
+            <locking acquire-timeout="60000"/>
+        </distributed-cache>
+        <distributed-cache name="clientSessions" owners="2" remote-timeout="60000">
+            <!--      <transaction mode="NON_XA"/>-->
+            <expiration lifespan="-1"/>
+            <persistence passivation="false">
+                <remote-store cache="clientSessions"
+                              shared="true"
+                              segmented="false"
+                              socket-timeout="5000"
+                              connect-timeout="10000"
+                              raw-values="true"
+                              xmlns="urn:infinispan:config:store:remote:14.0">
+                    <remote-server host="${env.ISPN_URL}"/>
+                    <security>
+                        <authentication>
+                            <digest username="${env.ISPN_USERNAME}" password="${env.ISPN_PASSWORD}" realm="default"/>
+                        </authentication>
+                    </security>
+                </remote-store>
+            </persistence>
+            <!--
+              100000 objects are kept per keycloak node in memory for quick access (max-count=100000),
+              these will not be replicated to other keycloak nodes directly (owners=1).
+              Every entry will be pushed to a remote store (our dedicated infinispan).
+            -->
+            <!--      <memory max-count="100000"/>-->
+            <locking acquire-timeout="60000"/>
+        </distributed-cache>
+        <distributed-cache name="offlineSessions" owners="2" remote-timeout="60000">
+            <!--       <memory max-count="100000"/>-->
+            <expiration lifespan="-1"/>
+            <locking acquire-timeout="60000"/>
+            <persistence passivation="false">
+                <remote-store cache="offlineSessions"
+                              shared="true"
+                              segmented="false"
+                              socket-timeout="5000"
+                              connect-timeout="10000"
+                              raw-values="true"
+                              xmlns="urn:infinispan:config:store:remote:14.0">
+                    <remote-server host="${env.ISPN_URL}"/>
+                    <security>
+                        <authentication>
+                            <digest username="${env.ISPN_USERNAME}" password="${env.ISPN_PASSWORD}" realm="default"/>
+                        </authentication>
+                    </security>
+                </remote-store>
+            </persistence>
+        </distributed-cache>
+        <distributed-cache name="offlineClientSessions" owners="2" remote-timeout="60000">
+            <!--       <memory max-count="100000"/>-->
+            <locking acquire-timeout="60000"/>
+            <expiration lifespan="-1"/>
+            <persistence passivation="false">
+                <remote-store cache="offlineClientSessions"
+                              shared="true"
+                              segmented="false"
+                              socket-timeout="5000"
+                              connect-timeout="10000"
+                              raw-values="true"
+                              xmlns="urn:infinispan:config:store:remote:14.0">
+                    <remote-server host="${env.ISPN_URL}"/>
+                    <security>
+                        <authentication>
+                            <digest username="${env.ISPN_USERNAME}" password="${env.ISPN_PASSWORD}" realm="default"/>
+                        </authentication>
+                    </security>
+                </remote-store>
+            </persistence>
+        </distributed-cache>
+        <distributed-cache name="loginFailures" owners="2" remote-timeout="60000">
+            <!--      <memory max-count="100000"/>-->
+            <expiration lifespan="-1"/>
+            <locking acquire-timeout="60000"/>
+            <persistence passivation="false">
+                <remote-store cache="loginFailures"
+                              shared="true"
+                              segmented="false"
+                              socket-timeout="5000"
+                              connect-timeout="10000"
+                              raw-values="true"
+                              xmlns="urn:infinispan:config:store:remote:14.0">
+                    <remote-server host="${env.ISPN_URL}"/>
+                    <security>
+                        <authentication>
+                            <digest username="${env.ISPN_USERNAME}" password="${env.ISPN_PASSWORD}" realm="default"/>
+                        </authentication>
+                    </security>
+                </remote-store>
+            </persistence>
+        </distributed-cache>
+        <distributed-cache name="actionTokens" owners="2" remote-timeout="60000">
+            <encoding>
+                <key media-type="application/x-java-object"/>
+                <value media-type="application/x-java-object"/>
+            </encoding>
+            <locking acquire-timeout="60000"/>
+            <expiration max-idle="-1" lifespan="-1" interval="300000"/>
+            <persistence passivation="false">
+                <remote-store cache="actionTokens"
+                              shared="true"
+                              segmented="false"
+                              raw-values="true"
+                              xmlns="urn:infinispan:config:store:remote:14.0">
+                    <remote-server host="${env.ISPN_URL}"/>
+                    <security>
+                        <authentication>
+                            <digest username="${env.ISPN_USERNAME}" password="${env.ISPN_PASSWORD}" realm="default"/>
+                        </authentication>
+                    </security>
+                </remote-store>
+            </persistence>
+        </distributed-cache>
+
+        <local-cache-configuration name="local-cache-cfg">
+            <encoding>
+                <key media-type="application/x-java-object"/>
+                <value media-type="application/x-java-object"/>
+            </encoding>
+            <memory max-count="10000"/>
+        </local-cache-configuration>
+
+        <local-cache name="realms" configuration="local-cache-cfg">
+        </local-cache>
+        <local-cache name="users" configuration="local-cache-cfg">
+            <memory max-count="100000"/>
+        </local-cache>
+        <local-cache name="authorization" configuration="local-cache-cfg">
+        </local-cache>
+        <local-cache name="keys" configuration="local-cache-cfg">
+            <expiration max-idle="3600000"/>
+            <memory max-count="1000"/>
+        </local-cache>
+
+        <replicated-cache name="work" remote-timeout="60000">
+            <expiration lifespan="-1"/>
+            <persistence passivation="false">
+                <remote-store cache="work"
+                              shared="true"
+                              segmented="false"
+                              raw-values="true"
+                              xmlns="urn:infinispan:config:store:remote:14.0">
+                    <remote-server host="${env.ISPN_URL}"/>
+                    <security>
+                        <authentication>
+                            <digest username="${env.ISPN_USERNAME}" password="${env.ISPN_PASSWORD}" realm="default"/>
+                        </authentication>
+                    </security>
+                </remote-store>
+
+            </persistence>
+        </replicated-cache>
+
+    </cache-container>
+</infinispan>

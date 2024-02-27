@@ -1,0 +1,223 @@
+# Source: keycloakx/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: keycloak
+    app.kubernetes.io/version: "22"
+imagePullSecrets:
+  []
+---
+# Source: keycloakx/templates/rbac.yaml
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: keycloak
+    app.kubernetes.io/version: "22"
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - list
+      - get
+---
+# Source: keycloakx/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: keycloak
+    app.kubernetes.io/version: "22"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: keycloak
+subjects:
+  - kind: ServiceAccount
+    name: keycloak
+    namespace: "default"
+---
+# Source: keycloakx/templates/service-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-headless
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: keycloak
+    app.kubernetes.io/version: "22"
+    app.kubernetes.io/component: headless
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: keycloak
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-http
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: keycloak
+    app.kubernetes.io/version: "22"
+    app.kubernetes.io/component: http
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+    - name: https
+      port: 8443
+      targetPort: https
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: keycloak
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/instance: keycloak
+    app.kubernetes.io/version: "22"
+    app: "keycloak"
+    component: "sso"
+    instance: "keycloak"
+    owned-by: "identity"
+    part-of: "auth"
+    version: "preprod"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+      app.kubernetes.io/instance: keycloak
+  replicas: 5
+  serviceName: keycloak-headless
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak
+        app.kubernetes.io/instance: keycloak
+        app: "keycloak"
+        keycloak-cluster: "default"
+    spec:
+      containers:
+        - name: keycloak
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+          image: "custom-keycloak:22"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KC_DB_PASSWORD
+              value: testpassword
+            - name: KC_DB_URL_HOST
+              value: postgres-db.keycloak.svc
+            - name: KC_DB_USERNAME
+              value: keycloak
+            - name: KC_METRICS_ENABLED
+              value: "true"
+            - name: KC_DB_POOL_MAX_SIZE
+              value: "5"
+            - name: KC_DB_POOL_MIN_SIZE
+              value: "5"
+            - name: KC_DB_POOL_INITIAL_SIZE
+              value: "5"
+            - name: CACHE_OWNERS_COUNT
+              value: "2"
+            - name: KEYCLOAK_ADMIN_LOG_LEVEL
+              value: FULL
+            - name: KC_LOG_LEVEL
+              value: info
+            - name: JAVA_OPTS
+              value: >-
+                -XX:+UseContainerSupport
+                -XX:+UseG1GC
+                -XX:MaxRAMPercentage=70.0
+                -XX:InitialRAMPercentage=40.0
+                -Djboss.site.name=site1
+                -Djava.net.preferIPv4Stack=true
+                -Djava.awt.headless=true
+                -Djgroups.dns.query=keycloak-headless.keycloak.svc
+            - name: ISPN_URL
+              value: infinispan.keycloak.svc
+            - name: ISPN_USERNAME
+              value: admin
+            - name: ISPN_PASSWORD
+              value: admin
+            - name: DEBUG
+              value: "true"
+#            - name: KEYCLOAK_ADMIN
+#              value: admin
+#            - name: KEYCLOAK_ADMIN_PASSWORD
+#              value: admin
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            failureThreshold: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /auth/realms/master/
+              port: http
+            initialDelaySeconds: 5
+            failureThreshold: 5
+            timeoutSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /auth/
+              port: http
+            initialDelaySeconds: 5
+            failureThreshold: 60
+            periodSeconds: 5
+            timeoutSeconds: 5
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 750m
+              memory: 1Gi
+      serviceAccountName: keycloak
+      securityContext:
+        fsGroup: 1000
+      enableServiceLinks: true
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 90

@@ -92,7 +92,7 @@ services:
     networks:
       - cluster
     build:
-      context: .
+      context: ..
       args:
         CONF: keycloak-local-ispn.conf
     container_name: keycloak-1
@@ -128,7 +128,7 @@ services:
     networks:
       - cluster
     build:
-      context: .
+      context: ..
       args:
         CONF: keycloak-local-ispn.conf
     container_name: keycloak-2
