@@ -1,0 +1,186 @@
+version: '3.9'
+
+networks:
+  cluster:
+    name: cluster
+    driver: bridge
+
+services:
+  postgres_infinispan:
+    networks:
+      - cluster
+    image: postgres:16
+    container_name: postgres_infinispan
+    environment:
+      POSTGRES_DB: infinispan
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_PORT: 5431
+    ports:
+      - "5431:5431"
+    command: -p 5431
+
+  postgres:
+    networks:
+      - cluster
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    #command: [ "postgres", "-c", "log_statement=all", "-c", "log_destination=stderr" ]
+
+  infinispan-remote-1:
+    networks:
+      - cluster
+    build:
+      dockerfile: Dockerfile-Infinispan
+      args:
+        server-config: /opt/infinispan/server/conf/infinispan.xml
+    container_name: infinispan-remote-1
+    environment:
+      USER: admin
+      PASS: admin
+      CACHE_OWNERS_COUNT: 1
+      ISPN_DB_URL_HOST: postgres_infinispan
+      ISPN_DB_USERNAME: user
+      ISPN_DB_PASSWORD: password
+      ISPN_NODE_NAME: infinispan-remote-1
+      JAVA_OPTIONS: "-Dinfinispan.deserialization.allowlist.classes=java.util.UUID -Dinfinispan.deserialization.allowlist.regexps=org.keycloak.*"
+    volumes:
+      - ./config/infinispan-local.xml:/opt/infinispan/server/conf/infinispan.xml:ro
+      - ./config/log4j2.xml:/opt/infinispan/server/conf/log4j2.xml:ro
+    ports:
+      - "11222:11222"
+    depends_on:
+      - postgres_infinispan
+    healthcheck:
+      test: [ "CMD", "ls" ]
+      start_period: 1s
+
+  infinispan-remote-2:
+    networks:
+      - cluster
+    build:
+      dockerfile: Dockerfile-Infinispan
+      args:
+        server-config: /opt/infinispan/server/conf/infinispan.xml
+    container_name: infinispan-remote-2
+    environment:
+      USER: admin
+      PASS: admin
+      CACHE_OWNERS_COUNT: 1
+      ISPN_DB_URL_HOST: postgres_infinispan
+      ISPN_DB_USERNAME: user
+      ISPN_DB_PASSWORD: password
+      ISPN_NODE_NAME: infinispan-remote-2
+      JAVA_OPTIONS: "-Dinfinispan.deserialization.allowlist.classes=java.util.UUID -Dinfinispan.deserialization.allowlist.regexps=org.keycloak.*"
+    volumes:
+      - ./config/infinispan-local.xml:/opt/infinispan/server/conf/infinispan.xml:ro
+    ports:
+      - "11333:11222"
+    depends_on:
+      - postgres_infinispan
+    healthcheck:
+      test: [ "CMD", "ls" ]
+      start_period: 1s
+
+  keycloak-1:
+    networks:
+      - cluster
+    build:
+      context: .
+      args:
+        CONF: keycloak-local-ispn.conf
+    container_name: keycloak-1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB_USERNAME: user
+      KC_DB_PASSWORD: password
+      KC_DB_URL_HOST: postgres
+      CACHE_OWNERS_COUNT: 1
+      KEYCLOAK_ADMIN_LOG_LEVEL: FULL
+      ISPN_URL: infinispan-remote-1
+      ISPN_USERNAME: admin
+      ISPN_PASSWORD: admin
+      ISPN_NODE_NAME: infinispan-embedded-1
+      DEBUG: "true"
+      DEBUG_PORT: "*:8000"
+      #KC_LOG_LEVEL: TRACE
+    ports:
+      - "8080:8080"
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_started
+      infinispan-remote-1:
+        condition: service_healthy
+      infinispan-remote-2:
+        condition: service_healthy
+
+  keycloak-2:
+    networks:
+      - cluster
+    build:
+      context: .
+      args:
+        CONF: keycloak-local-ispn.conf
+    container_name: keycloak-2
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB_USERNAME: user
+      KC_DB_PASSWORD: password
+      KC_DB_URL_HOST: postgres
+      CACHE_OWNERS_COUNT: 1
+      KEYCLOAK_ADMIN_LOG_LEVEL: FULL
+      ISPN_URL: infinispan-remote-1
+      ISPN_USERNAME: admin
+      ISPN_PASSWORD: admin
+      ISPN_NODE_NAME: infinispan-embedded-2
+      DEBUG: "true"
+      DEBUG_PORT: "*:8000"
+      #KC_LOG_LEVEL: TRACE
+    ports:
+      - "8081:8080"
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_started
+      infinispan-remote-1:
+        condition: service_healthy
+      infinispan-remote-2:
+        condition: service_healthy
+#      - keycloak-1
+
+  keycloak-config-cli:
+    networks:
+      - cluster
+    image: quay.io/adorsys/keycloak-config-cli:latest-22.0.4
+    container_name: keycloak-config-cli
+    environment:
+      LOGGING_LEVEL_HTTP: INFO
+      LOGGING_LEVEL_REALMCONFIG: INFO
+      KC_LOG_LEVEL: INFO
+      LOGGING_LEVEL_KEYCLOAKCONFIGCLI: INFO
+      LOGGING_LEVEL_ROOT: INFO
+      SPRING_PROFILES_ACTIVE: local
+      KEYCLOAK_URL: http://keycloak-1:8080/auth
+      KEYCLOAK_USER: admin
+      KEYCLOAK_PASSWORD: admin
+      KEYCLOAK_AVAILABILITYCHECK_ENABLED: true
+      IMPORT_FILES_LOCATIONS: config/realm.yml
+      IMPORT_VARSUBSTITUTION_ENABLED: true
+    volumes:
+      - ./config:/config
+    depends_on:
+      - keycloak-1
+      - keycloak-2

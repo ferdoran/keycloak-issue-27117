@@ -1,0 +1,145 @@
+<!-- This configuration should be kept in sync with infinispan-custom.xml, only the transport element is different -->
+<infinispan
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="urn:infinispan:config:14.0 https://infinispan.org/schemas/infinispan-config-14.0.xsd
+                      urn:infinispan:server:14.0 https://infinispan.org/schemas/infinispan-server-14.0.xsd
+                      urn:infinispan:config:store:jdbc:14.0 https://infinispan.org/schemas/infinispan-cachestore-jdbc-config-14.0.xsd"
+        xmlns="urn:infinispan:config:14.0">
+
+    <!--
+    we need to override the default mcast_port to avoid that Keycloak nodes try to join the
+    external infinispan cluster more documentation on this topic can be found here:
+    https://infinispan.org/docs/stable/titles/server/server.html#using-inline-jgroups-stacks_cluster-transport
+    -->
+    <jgroups>
+        <stack name="tcp-remote" extends="tcp">
+            <MPING mcast_port="43377"/>
+        </stack>
+    </jgroups>
+
+    <cache-container name="keycloak" statistics="true">
+
+        <transport cluster="infinispan" node-name="${env.ISPN_NODE_NAME}" stack="tcp-remote"/>
+
+        <!-- config for persistent caches -->
+        <distributed-cache-configuration name="persistent-distributed-cache-cfg"
+                                         owners="1"
+                                         remote-timeout="30000">
+
+            <!-- jdbc persistence -->
+            <!--
+              https://infinispan.org/docs/stable/titles/configuring/configuring.html#sql-cache-store_persistence
+            -->
+            <!--
+              Every entry in the store is also persisted to the database.
+              Thus, when entries are evicted from the memory because of memory max-count,
+              the entries in the database are a superset of the entries in memory.
+              Entries are deleted from the database if they expire or receive a remove call
+            -->
+            <persistence passivation="false">
+                <string-keyed-jdbc-store shared="true" xmlns="urn:infinispan:config:store:jdbc:14.0">
+                    <!-- Specifies the JNDI name of a managed datasource on Infinispan Server. -->
+                    <data-source jndi-url="jdbc/postgres"/>
+                    <string-keyed-table drop-on-exit="false" prefix="cache">
+                        <id-column name="ID" type="VARCHAR(255)"/>
+                        <data-column name="DATA" type="BYTEA"/>
+                        <timestamp-column name="TIMESTAMP" type="BIGINT"/>
+                        <segment-column name="SEGMENT" type="INT"/>
+                    </string-keyed-table>
+                </string-keyed-jdbc-store>
+            </persistence>
+
+            <!--
+              10000 objects are kept per ispn node in memory for quick access (max-count=10000),
+              these will be replicated to CACHE_OWNERS_COUNT other ispn nodes directly.
+              If the amount of objects exceeds the max-count value, the oldest objects are evicted (not deleted!).
+            -->
+            <memory max-count="100000"/>
+
+            <!-- look in the logs for state transfer timeouts and extend if necessary -->
+            <state-transfer timeout="60123"/>
+
+        </distributed-cache-configuration>
+
+        <distributed-cache name="sessions" configuration="persistent-distributed-cache-cfg">
+            <encoding media-type="application/x-jboss-marshalling"/>
+        </distributed-cache>
+        <distributed-cache name="clientSessions" configuration="persistent-distributed-cache-cfg">
+            <encoding media-type="application/x-jboss-marshalling"/>
+        </distributed-cache>
+    </cache-container>
+
+    <server xmlns="urn:infinispan:server:14.0">
+        <!--
+          We need to overwrite the default interface here or clustering won't work,
+          because the pods in r5s run with carrier-grade NAT IPs
+          and infinispan doesn't list to these ips by default.
+          Unfortunately this makes port-forwarding to an ispn pod unusable.
+        -->
+        <interfaces>
+            <interface name="public">
+                <match-interface value="eth0"/>
+            </interface>
+            <interface name="metrics">
+                <match-interface value="eth0"/>
+            </interface>
+        </interfaces>
+
+        <socket-bindings port-offset="0" default-interface="public">
+            <socket-binding name="default" port="11222" interface="public"/>
+            <socket-binding name="metrics" port="11223" interface="metrics"/>
+        </socket-bindings>
+
+        <security>
+            <security-realms>
+                <security-realm name="default">
+                    <properties-realm groups-attribute="Roles">
+                        <user-properties path="users.properties"/>
+                        <group-properties path="groups.properties"/>
+                    </properties-realm>
+                </security-realm>
+                <security-realm name="metrics"/>
+            </security-realms>
+        </security>
+
+        <data-sources>
+            <!-- Defines a unique name for the datasource and JNDI name that you
+                 reference in JDBC cache store configuration.
+                 Enables statistics for the datasource, if required. -->
+            <data-source name="ds" jndi-name="jdbc/postgres" statistics="false">
+                <!-- Specifies the JDBC driver that creates connections. -->
+                <connection-factory
+                        url="jdbc:postgresql://${env.ISPN_DB_URL_HOST}:5431/infinispan"
+                        username="${env.ISPN_DB_USERNAME}"
+                        password="${env.ISPN_DB_PASSWORD}"
+                        driver="org.postgresql.Driver"/>
+
+                <!-- Defines connection pool tuning properties. -->
+                <connection-pool
+                        initial-size="5"
+                        max-size="50"
+                        min-size="10"
+                        background-validation="1000"
+                        idle-removal="1"
+                        blocking-timeout="1000"
+                        leak-detection="10000"/>
+            </data-source>
+        </data-sources>
+
+        <endpoints>
+            <endpoint socket-binding="default" security-realm="default">
+                <hotrod-connector name="hotrod" network-prefix-override="false">
+                    <authentication>
+                        <sasl mechanisms="DIGEST-MD5" server-name="infinispan"/>
+                    </authentication>
+                </hotrod-connector>
+                <rest-connector name="rest">
+                    <authentication mechanisms="BASIC"/>
+                </rest-connector>
+            </endpoint>
+            <endpoint socket-binding="metrics" security-realm="metrics">
+                <rest-connector name="rest"/>
+            </endpoint>
+        </endpoints>
+    </server>
+</infinispan>

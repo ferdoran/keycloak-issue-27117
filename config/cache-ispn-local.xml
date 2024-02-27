@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    official documentation https://www.keycloak.org/server/caching
+-->
+<!-- This configuration should be kept in sync with infinispan-custom.xml, only the transport element is different -->
+<infinispan xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="urn:infinispan:config:14.0 https://infinispan.org/schemas/infinispan-config-14.0.xsd
+                                urn:infinispan:config:store:remote:14.0 https://infinispan.org/schemas/infinispan-config-14.0.xsd"
+            xmlns="urn:infinispan:config:14.0">
+
+    <cache-container name="keycloak">
+        <transport cluster="infinispan-local" stack="tcp" node-name="${env.ISPN_NODE_NAME}"/>
+
+        <!--
+        DISTRIBUTED CACHES
+        -->
+        <distributed-cache name="authenticationSessions" owners="1"/>
+        <distributed-cache name="sessions" owners="1">
+            <!--      dirty workaround to synchronize the cache-->
+            <!--      <transaction mode="NON_XA"/>-->
+            <remote-store cache="sessions"
+                          shared="true"
+                          segmented="false"
+                          socket-timeout="5000"
+                          tcp-no-delay="true"
+                          connect-timeout="10000"
+                          raw-values="true"
+                          marshaller="org.keycloak.cluster.infinispan.KeycloakHotRodMarshallerFactory"
+                          xmlns="urn:infinispan:config:store:remote:14.0">
+                <remote-server host="${env.ISPN_URL}"/>
+                <security>
+                    <authentication>
+                        <digest username="${env.ISPN_USERNAME}" password="${env.ISPN_PASSWORD}" realm="default"/>
+                    </authentication>
+                </security>
+            </remote-store>
+            <memory max-count="100000"/>
+        </distributed-cache>
+        <distributed-cache name="clientSessions" owners="1">
+            <!--      dirty workaround to synchronize the cache-->
+            <!--      <transaction mode="NON_XA"/>-->
+            <remote-store cache="clientSessions"
+                          shared="true"
+                          segmented="false"
+                          socket-timeout="5000"
+                          tcp-no-delay="true"
+                          connect-timeout="10000"
+                          raw-values="true"
+                          marshaller="org.keycloak.cluster.infinispan.KeycloakHotRodMarshallerFactory"
+                          xmlns="urn:infinispan:config:store:remote:14.0">
+                <remote-server host="${env.ISPN_URL}"/>
+                <security>
+                    <authentication>
+                        <digest username="${env.ISPN_USERNAME}" password="${env.ISPN_PASSWORD}" realm="default"/>
+                    </authentication>
+                </security>
+            </remote-store>
+            <memory max-count="100000"/>
+        </distributed-cache>
+        <distributed-cache name="offlineSessions" owners="1">
+            <memory max-count="100000"/>
+        </distributed-cache>
+        <distributed-cache name="offlineClientSessions" owners="1">
+            <memory max-count="100000"/>
+        </distributed-cache>
+        <distributed-cache name="loginFailures" owners="1">
+            <memory max-count="100000"/>
+        </distributed-cache>
+        <distributed-cache name="actionTokens" owners="1">
+            <encoding>
+                <key media-type="application/x-java-object"/>
+                <value media-type="application/x-java-object"/>
+            </encoding>
+        </distributed-cache>
+
+        <!--
+        LOCAL CACHES
+        -->
+        <local-cache-configuration name="local-cache-cfg">
+            <encoding>
+                <key media-type="application/x-java-object"/>
+                <value media-type="application/x-java-object"/>
+            </encoding>
+            <memory max-count="10000"/>
+        </local-cache-configuration>
+
+        <local-cache name="realms" configuration="local-cache-cfg"/>
+        <local-cache name="users" configuration="local-cache-cfg">
+            <memory max-count="100000"/>
+        </local-cache>
+        <local-cache name="authorization" configuration="local-cache-cfg"/>
+        <local-cache name="keys" configuration="local-cache-cfg">
+            <expiration max-idle="3600000"/>
+            <memory max-count="1000"/>
+        </local-cache>
+
+        <!--
+        REPLICATED CACHES
+        -->
+        <replicated-cache name="work"/>
+
+    </cache-container>
+</infinispan>

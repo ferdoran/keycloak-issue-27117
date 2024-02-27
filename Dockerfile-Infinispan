@@ -1,0 +1,18 @@
+FROM quay.io/infinispan/server:14.0.21.Final
+
+ENV CUSTOM_LIB_PATH=/opt/infinispan/server/lib
+
+ENV KEYCLOAK_VERSION=22.0.4
+ENV POSTGRES_DRIVER_VERSION=42.5.1
+ENV LOG4J_VERSION=2.19.0
+
+RUN curl -s -L -o $CUSTOM_LIB_PATH/keycloak-core-$KEYCLOAK_VERSION.jar https://repo1.maven.org/maven2/org/keycloak/keycloak-core/$KEYCLOAK_VERSION/keycloak-core-$KEYCLOAK_VERSION.jar && \
+    curl -s -L -o $CUSTOM_LIB_PATH/keycloak-model-infinispan-$KEYCLOAK_VERSION.jar https://repo1.maven.org/maven2/org/keycloak/keycloak-model-infinispan/$KEYCLOAK_VERSION/keycloak-model-infinispan-$KEYCLOAK_VERSION.jar && \
+    curl -s -L -o $CUSTOM_LIB_PATH/keycloak-common-$KEYCLOAK_VERSION.jar https://repo1.maven.org/maven2/org/keycloak/keycloak-common/$KEYCLOAK_VERSION/keycloak-common-$KEYCLOAK_VERSION.jar && \
+    curl -s -L -o $CUSTOM_LIB_PATH/keycloak-server-spi-$KEYCLOAK_VERSION.jar https://repo1.maven.org/maven2/org/keycloak/keycloak-server-spi/$KEYCLOAK_VERSION/keycloak-server-spi-$KEYCLOAK_VERSION.jar && \
+    curl -s -L -o $CUSTOM_LIB_PATH/keycloak-server-spi-private-$KEYCLOAK_VERSION.jar https://repo1.maven.org/maven2/org/keycloak/keycloak-server-spi-private/$KEYCLOAK_VERSION/keycloak-server-spi-private-$KEYCLOAK_VERSION.jar && \
+    # Add postgres driver
+    curl -s -L -o $CUSTOM_LIB_PATH/postgresql-$POSTGRES_DRIVER_VERSION.jar https://repo1.maven.org/maven2/org/postgresql/postgresql/$POSTGRES_DRIVER_VERSION/postgresql-$POSTGRES_DRIVER_VERSION.jar && \
+    # ECS formatted logging
+    curl -s -L -o $CUSTOM_LIB_PATH/log4j-core-$LOG4J_VERSION.jar https://repo1.maven.org/maven2/org/apache/logging/log4j/log4j-core/$LOG4J_VERSION/log4j-core-$LOG4J_VERSION.jar && \
+    curl -s -L -o $CUSTOM_LIB_PATH/log4j-layout-template-json-$LOG4J_VERSION.jar https://repo1.maven.org/maven2/org/apache/logging/log4j/log4j-layout-template-json/$LOG4J_VERSION/log4j-layout-template-json-$LOG4J_VERSION.jar

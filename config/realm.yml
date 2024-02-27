@@ -1,0 +1,6 @@
+realm: master
+enabled: true
+clients:
+  - clientId: "account-console"
+    directAccessGrantsEnabled: true
+
